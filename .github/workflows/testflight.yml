@@ -1,0 +1,115 @@
+name: TestFlight
+
+# Builds a signed release and uploads it to App Store Connect / TestFlight.
+# Needs these repository secrets (Settings → Secrets and variables → Actions):
+#   ASC_KEY_ID        App Store Connect API key ID (Users and Access → Integrations → App Store Connect API)
+#   ASC_ISSUER_ID     The issuer ID shown on that page
+#   ASC_KEY_P8        The full text of the downloaded AuthKey_XXXX.p8 file
+#   APPLE_TEAM_ID     Your 10-character Apple Developer team ID
+# and optionally the repository variable BUNDLE_ID (default com.sammhd.drooz).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Marketing version (e.g. 1.0.0)
+        required: false
+        default: "1.0.0"
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: macos-26
+    env:
+      BUNDLE_ID: ${{ vars.BUNDLE_ID || 'com.sammhd.drooz' }}
+      DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          K: ${{ secrets.ASC_KEY_ID }}
+          I: ${{ secrets.ASC_ISSUER_ID }}
+          P: ${{ secrets.ASC_KEY_P8 }}
+          T: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          [ -z "$K" ] && missing="$missing ASC_KEY_ID"
+          [ -z "$I" ] && missing="$missing ASC_ISSUER_ID"
+          [ -z "$P" ] && missing="$missing ASC_KEY_P8"
+          [ -z "$T" ] && missing="$missing APPLE_TEAM_ID"
+          if [ -n "$missing" ]; then echo "::error::Missing secrets:$missing (see README → TestFlight)"; exit 1; fi
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)" && xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Write API key
+        env:
+          P8: ${{ secrets.ASC_KEY_P8 }}
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$P8" > "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8" >> "$GITHUB_ENV"
+
+      - name: Versions
+        run: |
+          V="${{ github.event.inputs.version }}"
+          if [ -z "$V" ] && [[ "$GITHUB_REF_NAME" == v* ]]; then V="${GITHUB_REF_NAME#v}"; fi
+          [ -z "$V" ] && V="1.0.0"
+          # Build numbers must only grow: minutes since 2026-01-01 keeps them unique and increasing.
+          B=$(( ($(date -u +%s) - 1767225600) / 60 ))
+          echo "MARKETING_VERSION=$V" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$B" >> "$GITHUB_ENV"
+          echo "Version $V ($B)"
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild archive -project DRooz.xcodeproj -scheme DRooz -configuration Release \
+            -destination 'generic/platform=tvOS' -archivePath "$RUNNER_TEMP/DRooz.xcarchive" \
+            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            CODE_SIGN_STYLE=Automatic CODE_SIGNING_ALLOWED=NO \
+            2>&1 | grep -E "error:|warning: .*(sign|profile)|ARCHIVE (SUCCEEDED|FAILED)|\*\*" | head -200
+
+      - name: Export and upload to App Store Connect
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$DEVELOPMENT_TEAM</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>testFlightInternalTestingOnly</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/DRooz.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" 2>&1 | tail -60
+
+      - name: Summary
+        run: |
+          echo "### Uploaded DRooz $MARKETING_VERSION ($BUILD_NUMBER) to App Store Connect" >> "$GITHUB_STEP_SUMMARY"
+          echo "It appears in TestFlight after Apple finishes processing (usually 5–30 minutes)." >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,13 @@
+# Xcode
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+build/
+.build/
+.swiftpm/
+*.ipa
+*.xcarchive
+# Secrets
+*.p8
+AuthKey_*.p8
+.claude/settings.local.json
