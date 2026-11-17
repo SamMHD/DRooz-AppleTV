@@ -18,7 +18,7 @@ final class DefaultsJSON<T: Codable>: @unchecked Sendable {
     }
 }
 
-func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
+public func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
 /// Local per-stream watch state, newest first; capped.
 public final class WatchStore: @unchecked Sendable {
