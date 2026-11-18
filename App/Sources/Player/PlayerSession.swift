@@ -451,6 +451,10 @@ final class PlayerSession: NSObject {
     }
 
     private func audioName(_ o: AVMediaSelectionOption) -> String {
+        // The rendition's HLS NAME («original», «original-6CH», «dubbed-fa») arrives as its title;
+        // displayName only reflects the language, which these playlists omit («Unknown»).
+        let titles = AVMetadataItem.metadataItems(from: o.commonMetadata, withKey: AVMetadataKey.commonKeyTitle, keySpace: .common)
+        if let title = titles.first?.stringValue, !title.isEmpty { return title }
         let name = o.displayName
         if name.contains("original") || name.contains("dubbed") || name.contains("6CH") { return name }
         // Some playlists name renditions by language only.
@@ -478,6 +482,7 @@ final class PlayerSession: NSObject {
             setAudioDubbed(dubbed)
             app.titlePrefs.setDubSelected(ref.postId, dubbed)
         }
+        rebuildMenus()
     }
 
     private func setAudioDubbed(_ dubbed: Bool) {
@@ -739,6 +744,7 @@ final class PlayerSession: NSObject {
         var items: [UIMenuElement] = []
         items.append(subtitleMenu())
         if !qualities.isEmpty { items.append(qualityMenu()) }
+        if let audio = audioMenu() { items.append(audio) }
         items.append(UIMenu(title: "تقویت صدا", image: UIImage(systemName: "speaker.wave.3"), options: .singleSelection, children: [
             UIAction(title: "روشن", state: boost ? .on : .off) { [weak self] _ in self?.setBoost(true) },
             UIAction(title: "خاموش", state: boost ? .off : .on) { [weak self] _ in self?.setBoost(false) },
@@ -780,7 +786,9 @@ final class PlayerSession: NSObject {
                         children: SubtitleStyle.opacities.map { v in
             UIAction(title: UiStrings.percent(v), state: v == st.backgroundOpacity ? .on : .off) { [weak self] _ in self?.setStyle { $0.backgroundOpacity = v } }
         })
-        return UIMenu(title: "زیرنویس", image: UIImage(systemName: "captions.bubble"),
+        // Not «captions.bubble»: on tvOS 27 the system's own Subtitles button (generated English captions,
+        // which can't be turned off) uses that icon, and the two buttons looked the same.
+        return UIMenu(title: "زیرنویس", image: UIImage(systemName: "character.bubble") ?? UIImage(systemName: "text.bubble"),
                       children: [langs, UIMenu(title: "", options: .displayInline, children: [sync, size, color, bg])])
     }
 
@@ -792,7 +800,8 @@ final class PlayerSession: NSObject {
             let n = q.label.components(separatedBy: "[").first?.trimmingCharacters(in: .whitespaces) ?? q.label
             return n.allSatisfy(\.isNumber) ? "\(n)p" : n
         } ?? "\(playing)p"
-        let auto = playing > 0 ? "خودکار (\(name))" : "خودکار"
+        // Only while it is the choice: under a fixed quality the auto height would be stale.
+        let auto = playing > 0 && selectedQuality == nil ? "خودکار (\(name))" : "خودکار"
         var children: [UIMenuElement] = [UIAction(title: auto, state: selectedQuality == nil ? .on : .off) { [weak self] _ in
             self?.selectedQuality = nil; self?.applyQuality(); self?.rebuildMenus()
         }]
@@ -802,6 +811,33 @@ final class PlayerSession: NSObject {
             }
         }
         return UIMenu(title: "کیفیت", image: UIImage(systemName: "sparkles.tv"), options: .singleSelection, children: children)
+    }
+
+    /// The tracks by name: the native Audio menu lists this site's renditions as «Unknown».
+    private func audioMenu() -> UIMenu? {
+        guard audioOptions.count > 1, let group = audioGroup, let item = player.currentItem else { return nil }
+        let current = item.currentMediaSelection.selectedMediaOption(in: group)
+        return UIMenu(title: "صدا", image: UIImage(systemName: "speaker.wave.2.bubble"), options: .singleSelection,
+                      children: audioOptions.map { o in
+            UIAction(title: Self.audioLabel(audioName(o)), state: o == current ? .on : .off) { [weak self] _ in
+                guard let self, let item = self.player.currentItem, let group = self.audioGroup else { return }
+                item.select(o, in: group) // mediaSelectionDidChange → audioSelectionChanged
+            }
+        })
+    }
+
+    /// «original» → اصلی, «dubbed-fa» → دوبله فارسی, «…-6CH» → «… ۵.۱»; anything else as the site named it.
+    static func audioLabel(_ name: String) -> String {
+        var base = name
+        let surround = base.hasSuffix("-6CH")
+        if surround { base = String(base.dropLast(4)) }
+        let label: String
+        switch base {
+        case "original": label = "اصلی"
+        case let b where b.hasPrefix("dubbed"): label = "دوبله فارسی"
+        default: return name
+        }
+        return surround ? label + " " + "5.1".persianDigits : label
     }
 
     private func episodesMenu() -> UIMenu {
