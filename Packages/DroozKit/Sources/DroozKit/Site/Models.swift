@@ -106,7 +106,7 @@ public struct TitleCard: Hashable, Codable, Sendable {
         self.synopsis = synopsis; self.episodeLabel = episodeLabel; self.status = status
     }
 
-    public static func minimal(_ ref: TitleRef) -> TitleCard { TitleCard(ref: ref, title: ref.slug) }
+    public static func minimal(_ ref: TitleRef) -> TitleCard { TitleCard(ref: ref, title: UiStrings.prettifySlug(ref.slug)) }
 }
 
 public struct FeaturedItem: Hashable, Codable, Sendable {

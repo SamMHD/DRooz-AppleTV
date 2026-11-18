@@ -13,26 +13,25 @@ struct SettingsScreen: View {
         HStack(alignment: .top, spacing: 60) {
             List {
                 Section(header: header("زیرنویس")) {
-                    Picker(selection: binding(\.subtitle)) {
-                        Text("فارسی").tag(SubtitleChoice.fa)
-                        Text("English").tag(SubtitleChoice.en)
-                        Text("فارسی + English").tag(SubtitleChoice.dual)
-                        Text("خاموش").tag(SubtitleChoice.off)
-                    } label: { Text("زبان") }
-                    Picker(selection: binding(\.style.sizePercent)) {
-                        ForEach(SubtitleStyle.sizes, id: \.self) { Text(UiStrings.percent($0)).tag($0) }
-                    } label: { Text("اندازه") }
-                    Picker(selection: binding(\.style.color)) {
-                        ForEach(SubtitleColor.allCases, id: \.self) { Text($0.label).tag($0) }
-                    } label: { Text("رنگ") }
-                    Picker(selection: binding(\.style.backgroundOpacity)) {
-                        ForEach(SubtitleStyle.opacities, id: \.self) { Text(UiStrings.percent($0)).tag($0) }
-                    } label: { Text("پس‌زمینه") }
+                    // tvOS 27 draws a picker without its label (inline: a bare segmented row where 15 sizes
+                    // don't fit); each row names its setting and opens a menu of values.
+                    ChoiceRow(title: "زبان", options: [.fa, .en, .dual, .off], selection: binding(\.subtitle)) {
+                        switch $0 {
+                        case .fa: "فارسی"
+                        case .en: "English"
+                        case .dual: "فارسی + English"
+                        case .faDub: "فارسی (دوبله)"
+                        case .off: "خاموش"
+                        }
+                    }
+                    ChoiceRow(title: "اندازه", options: SubtitleStyle.sizes, selection: binding(\.style.sizePercent)) { UiStrings.percent($0) }
+                    ChoiceRow(title: "رنگ", options: SubtitleColor.allCases, selection: binding(\.style.color)) { $0.label }
+                    ChoiceRow(title: "پس‌زمینه", options: SubtitleStyle.opacities, selection: binding(\.style.backgroundOpacity)) { UiStrings.percent($0) }
                 }
                 Section(header: header("صدا")) {
-                    Toggle("زبان پیش‌فرض: دوبله فارسی (در صورت وجود)", isOn: $defaultDub)
+                    SwitchRow(title: "زبان پیش‌فرض: دوبله فارسی (در صورت وجود)", isOn: $defaultDub)
                         .onChange(of: defaultDub) { _, v in app.titlePrefs.defaultDub = v }
-                    Toggle("تقویت صدا (یکسان‌سازی بلندی صدا)", isOn: binding(\.audioBoost))
+                    SwitchRow(title: "تقویت صدا (یکسان‌سازی بلندی صدا)", isOn: binding(\.audioBoost))
                 }
                 Section(header: header("حافظه")) {
                     Button(cleared ? "پاک شد" : "پاک کردن حافظه موقت") {
@@ -79,6 +78,45 @@ struct SettingsScreen: View {
             settings[keyPath: kp] = v
             app.playerPrefs.update { $0[keyPath: kp] = v }
         })
+    }
+}
+
+/// A setting with several values: its name, the current value, and a menu to change it.
+private struct ChoiceRow<T: Hashable>: View {
+    let title: String
+    let options: [T]
+    @Binding var selection: T
+    let label: (T) -> String
+
+    var body: some View {
+        Menu {
+            Picker(title, selection: $selection) {
+                ForEach(options, id: \.self) { Text(label($0)).tag($0) }
+            }
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(label(selection)).foregroundStyle(.secondary)
+            }
+        }
+        .tint(.white) // neutral like the other rows, not the app's red accent
+    }
+}
+
+/// A switch whose state reads in Persian (a system Toggle says On/Off: tvOS has no Persian strings).
+private struct SwitchRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button { isOn.toggle() } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(isOn ? "روشن" : "خاموش").foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

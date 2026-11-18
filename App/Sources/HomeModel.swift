@@ -17,7 +17,11 @@ struct RowUI: Identifiable, Equatable {
     var items: [CardUI] = []
     var loading = false
     var error = false
+    /// Items have arrived at least once (possibly none).
+    var loaded = false
     var id: String { key }
+    /// A section the site left empty: nothing to show, so the row is hidden rather than spinning.
+    var isEmptyResult: Bool { loaded && items.isEmpty && !loading && !error && key != "recent" }
 }
 
 struct HeroUI: Equatable {
@@ -116,6 +120,12 @@ final class HomeModel {
             return r
         }
         load(useCache: true)
+        // The baseline for "a play happened since": without it the first play after launch never reloads Home.
+        Task { [weak self] in
+            guard let self else { return }
+            let plays = await app.titleInfo.invalidations
+            if seenPlays < 0 { seenPlays = plays }
+        }
     }
 
     /// Home is showing again: after a play or 15 minutes, revalidate in place.
@@ -213,7 +223,7 @@ final class HomeModel {
             CardUI(ref: c.ref, title: c.title, imageURL: c.posterHash.flatMap { ImageUrls.poster($0, 360, 540) },
                    subtitle: c.episodeLabel ?? c.year.map { String($0).persianDigits }, landscape: false)
         }
-        update(key) { $0.items = ui; $0.loading = false; $0.error = false }
+        update(key) { $0.items = ui; $0.loading = false; $0.error = false; $0.loaded = true }
     }
 
     // MARK: «ادامه تماشا»
@@ -249,7 +259,7 @@ final class HomeModel {
                                  subtitle: item.subtitle, landscape: true, progress: item.progress))
             }
             continueItems = items
-            update(recentKey) { $0.items = ui; $0.loading = false; $0.error = false }
+            update(recentKey) { $0.items = ui; $0.loading = false; $0.error = false; $0.loaded = true }
         }
     }
 

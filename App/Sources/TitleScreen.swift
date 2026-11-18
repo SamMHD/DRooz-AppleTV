@@ -171,8 +171,10 @@ private struct TitleContent: View {
                 .ignoresSafeArea()
             LinearGradient(colors: [.clear, Palette.background], startPoint: .center, endPoint: .bottom).ignoresSafeArea()
 
-            if let d = model.detail {
-                ScrollView(.vertical) {
+            // The scroll view exists from the first frame: the tab bar picks the scroll view it hides with
+            // when the page appears, and one added after the details load left the bar over the text.
+            ScrollView(.vertical) {
+                if let d = model.detail {
                     VStack(alignment: .leading, spacing: 34) {
                         header(d)
                         buttons(d)
@@ -180,13 +182,13 @@ private struct TitleContent: View {
                         if !d.suggestions.isEmpty { suggestions(d) }
                     }
                     .padding(.horizontal, 90).padding(.top, 60).padding(.bottom, 80)
+                } else if let e = model.error {
+                    StateMessage(text: e) { model.load() }.frame(maxWidth: .infinity).containerRelativeFrame(.vertical)
+                } else {
+                    Spinner().frame(maxWidth: .infinity).containerRelativeFrame(.vertical)
                 }
-                .scrollClipDisabled()
-            } else if let e = model.error {
-                StateMessage(text: e) { model.load() }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Spinner().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .scrollClipDisabled()
         }
         .background(Palette.background)
         .onAppear { playFocused = true }

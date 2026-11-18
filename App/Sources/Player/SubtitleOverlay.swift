@@ -10,6 +10,12 @@ final class SubtitleOverlayModel {
     var style = SubtitleStyle()
     /// The video's natural size (for the letterbox bars); nil until known.
     var videoSize: CGSize?
+    /// The player's own title view overlaps its buttons on tvOS 27, so the title is drawn here instead,
+    /// shown only while the transport bar is.
+    var heading = ""
+    var subheading: String?
+    /// The transport bar is on screen: show the heading and keep subtitles clear of the controls.
+    var chromeVisible = false
 }
 
 /// One subtitle line block as styled by the user.
@@ -44,21 +50,43 @@ struct SubtitleOverlayView: View {
             let bar = g.size.height - rect.maxY
             let lineH = 46 * CGFloat(model.style.sizePercent) / 100 * 1.55
             let x = g.size.width / 2
+            // While the controls are up, subtitles end above the heading (or above the buttons without one).
+            let limit = model.chromeVisible ? g.size.height * (model.heading.isEmpty ? 770 : 640) / 1080 : .infinity
             if let fa = model.primary, let en = model.secondary {
                 let enLines = CGFloat(lines(en)), faLines = CGFloat(lines(fa))
                 let enInBar = bar >= lineH * enLines + 16
                 let enY = enInBar ? rect.maxY + bar / 2 : rect.maxY - 50 - (enLines - 1) * lineH / 2
                 let faBottom = enInBar ? rect.maxY - 40 : enY - enLines * lineH / 2 - 14
-                line(en).position(x: x, y: enY)
-                line(fa).position(x: x, y: faBottom - faLines * lineH / 2)
+                let lift = max(0, enY + enLines * lineH / 2 - limit)
+                line(en).position(x: x, y: enY - lift)
+                line(fa).position(x: x, y: faBottom - faLines * lineH / 2 - lift)
             } else if let one = model.primary ?? model.secondary {
                 let n = CGFloat(lines(one))
                 let inBar = bar >= lineH * n + 16
-                line(one).position(x: x, y: inBar ? rect.maxY + bar / 2 : rect.maxY - 60 - (n - 1) * lineH / 2)
+                let y = inBar ? rect.maxY + bar / 2 : rect.maxY - 60 - (n - 1) * lineH / 2
+                line(one).position(x: x, y: min(y, limit - n * lineH / 2))
+            }
+            if model.chromeVisible, !model.heading.isEmpty {
+                heading
+                    .frame(width: g.size.width - 168, alignment: .leading)
+                    .position(x: g.size.width / 2, y: g.size.height * 715 / 1080)
+                    .transition(.opacity)
             }
         }
         .allowsHitTesting(false)
         .ignoresSafeArea()
+    }
+
+    /// Episode line over the title, left-aligned with the transport bar's buttons (the player is laid out LTR).
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let sub = model.subheading {
+                Text(sub).font(.vazir(30, .medium)).foregroundStyle(.white.opacity(0.75))
+            }
+            TitleText(text: model.heading, size: 54, lines: 1).foregroundStyle(.white)
+        }
+        .shadow(color: .black.opacity(0.6), radius: 6, x: 0, y: 2)
+        .environment(\.layoutDirection, .leftToRight)
     }
 
     private func line(_ t: String) -> some View {
