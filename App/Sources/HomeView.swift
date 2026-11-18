@@ -34,7 +34,7 @@ private struct HomeContent: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 50) {
                     Color.clear.frame(height: 470)
-                    ForEach(model.rows) { row in
+                    ForEach(model.rows.filter { !$0.isEmptyResult }) { row in
                         RowView(row: row, model: model, focus: $focus) { ref in
                             if let route = model.activate(row.key, ref) { openTitle(route) }
                         }
@@ -50,7 +50,8 @@ private struct HomeContent: View {
     }
 
     private var hero: some View {
-        ZStack(alignment: .topTrailing) {
+        // Leading is the right edge in this RTL screen: the info sits over the gradient's dark side.
+        ZStack(alignment: .topLeading) {
             if let h = model.hero {
                 BackdropView(backdrop: h.backdrop)
                     .frame(width: 1920, height: 1080)
@@ -109,7 +110,7 @@ private struct RowView: View {
     @ViewBuilder private var content: some View {
         if row.items.isEmpty {
             Group {
-                if row.loading || (!row.error && row.key != "recent") {
+                if row.loading || (!row.loaded && !row.error && row.key != "recent") {
                     HStack { Spinner(); Spacer() }
                 } else if row.error {
                     Button("تلاش دوباره") { model.retry(row.key) }.font(.vazir(24, .bold))

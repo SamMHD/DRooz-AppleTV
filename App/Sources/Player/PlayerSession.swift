@@ -138,6 +138,12 @@ final class PlayerSession: NSObject {
     func present() {
         vc.player = player
         vc.allowsPictureInPicturePlayback = false
+        // tvOS 27 mirrors the transport bar's buttons to the right in RTL apps but still opens their menus
+        // rightwards, off screen. Laying the player out LTR keeps every menu on screen; menu rows stay RTL.
+        vc.traitOverrides.layoutDirection = .leftToRight
+        // Its title view sits on the same row as the buttons (tvOS 27); the overlay draws the title instead.
+        vc.transportBarIncludesTitleView = false
+        vc.delegate = self
         vc.onDismissed = { [weak self] in self?.finish() }
         let host = UIHostingController(rootView: SubtitleOverlayView(model: overlay))
         host.view.backgroundColor = .clear
@@ -335,6 +341,8 @@ final class PlayerSession: NSObject {
         ])
         let item = AVPlayerItem(asset: asset)
         item.externalMetadata = metadata()
+        overlay.heading = title
+        overlay.subheading = episodeLabel
         readySinceLoad = false
         observations.forEach { $0.invalidate() }
         observations = [
@@ -343,18 +351,29 @@ final class PlayerSession: NSObject {
             },
             item.observe(\.presentationSize, options: [.new]) { [weak self] item, _ in
                 Task { @MainActor in
-                    if item.presentationSize.width > 0 { self?.overlay.videoSize = item.presentationSize }
+                    guard let self, item.presentationSize.width > 0 else { return }
+                    let heightChanged = self.overlay.videoSize?.height != item.presentationSize.height
+                    self.overlay.videoSize = item.presentationSize
+                    // «خودکار (1080p)» names the playing height, unknown when the menus were first built.
+                    if heightChanged, self.selectedQuality == nil, !self.qualities.isEmpty { self.rebuildMenus() }
                 }
             },
         ]
         pendingStart = startMs
         pendingPlay = play
+        seekTarget = startMs
         player.replaceCurrentItem(with: item)
         await loadTracks(asset)
     }
 
     private var pendingStart: Int64 = 0
     private var pendingPlay = true
+    /// Where a freshly loaded item is headed until its first seek lands; its own clock reads 0 until then,
+    /// and a save, retry or recovery in that gap must not take that for the viewer's position.
+    private var seekTarget: Int64?
+    /// The item whose failure is being handled: AVFoundation can report one failure twice
+    /// (status and failed-to-play-to-end), and the second must not cancel the recovery the first started.
+    private weak var failedItem: AVPlayerItem?
 
     private func statusChanged(_ item: AVPlayerItem) {
         guard item === player.currentItem else { return }
@@ -370,10 +389,15 @@ final class PlayerSession: NSObject {
             let go = pendingPlay
             if start > 0 {
                 player.seek(to: CMTime(value: start, timescale: 1000), toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 1, preferredTimescale: 600)) { [weak self] _ in
-                    Task { @MainActor in if go { self?.player.play() } }
+                    Task { @MainActor in
+                        guard let self, self.player.currentItem === item else { return }
+                        self.seekTarget = nil
+                        if go { self.player.play() }
+                    }
                 }
-            } else if go {
-                player.play()
+            } else {
+                seekTarget = nil
+                if go { player.play() }
             }
         case .failed:
             failed(item.error)
@@ -477,6 +501,7 @@ final class PlayerSession: NSObject {
     // MARK: Ticks
 
     private var positionMs: Int64 {
+        if let seekTarget { return seekTarget }
         let t = player.currentTime().seconds
         return t.isFinite ? Int64(t * 1000) : 0
     }
@@ -554,6 +579,10 @@ final class PlayerSession: NSObject {
 
     private func failed(_ error: Error?) {
         guard !closed else { return }
+        if let item = player.currentItem {
+            if item === failedItem { return }
+            failedItem = item
+        }
         report(error)
         // An expired stream key or a dropped CDN connection: open the stream page again where we were.
         if stream != nil, reopenAllowed() {
@@ -757,7 +786,13 @@ final class PlayerSession: NSObject {
 
     private func qualityMenu() -> UIMenu {
         let playing = player.currentItem.map { Int($0.presentationSize.height) } ?? 0
-        let auto = playing > 0 ? "خودکار (\(playing)p)" : "خودکار"
+        // Named like the options below: a 2:1 film's «1080» variant is 1920×960, and «960p» read as a downgrade.
+        let current = qualities.min { abs($0.height - playing) < abs($1.height - playing) }
+        let name = current.map { q -> String in
+            let n = q.label.components(separatedBy: "[").first?.trimmingCharacters(in: .whitespaces) ?? q.label
+            return n.allSatisfy(\.isNumber) ? "\(n)p" : n
+        } ?? "\(playing)p"
+        let auto = playing > 0 ? "خودکار (\(name))" : "خودکار"
         var children: [UIMenuElement] = [UIAction(title: auto, state: selectedQuality == nil ? .on : .off) { [weak self] _ in
             self?.selectedQuality = nil; self?.applyQuality(); self?.rebuildMenus()
         }]
@@ -781,5 +816,15 @@ final class PlayerSession: NSObject {
             return UIMenu(title: "قسمت‌ها", image: UIImage(systemName: "list.bullet"), children: only.children)
         }
         return UIMenu(title: "قسمت‌ها", image: UIImage(systemName: "list.bullet"), children: seasonMenus)
+    }
+}
+
+extension PlayerSession: AVPlayerViewControllerDelegate {
+    nonisolated func playerViewController(_ playerViewController: AVPlayerViewController,
+                                          willTransitionToVisibilityOfTransportBar visible: Bool,
+                                          with coordinator: AVPlayerViewControllerAnimationCoordinator) {
+        MainActor.assumeIsolated {
+            withAnimation(.easeInOut(duration: 0.3)) { overlay.chromeVisible = visible }
+        }
     }
 }

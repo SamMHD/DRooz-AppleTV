@@ -33,6 +33,14 @@ final class ParserTests: XCTestCase {
         XCTAssertTrue(c.synopsis?.hasPrefix("روزنامه‌نگار هیپ‌هاپ") == true)
     }
 
+    /// Featured cards are a link and a poster only: the caption comes from the slug, made readable.
+    func testHomeCardWithoutHeadingGetsReadableTitle() throws {
+        let home = try HomeParser.parse(fixture("home.html"))
+        let featured = try XCTUnwrap(home.sections.first { $0.title == "فیلم های برگزیده" })
+        XCTAssertEqual(featured.items.first?.title, "Shaun The Sheep The Beast Of Mossy Bottom")
+        XCTAssertEqual(TitleCard.minimal(featured.items[1].ref).title, "Tenzing")
+    }
+
     func testHomeTitlesAreNormalized() throws {
         let html = fixture("home.html").replacingOccurrences(of: "فیلم های برگزیده", with: "فیلم\u{200C}هاي برگزیده")
         XCTAssertEqual(try HomeParser.parse(html).sections.first?.title, "فیلم های برگزیده")
@@ -99,6 +107,18 @@ final class ParserTests: XCTestCase {
         XCTAssertEqual(d.suggestionPosters[d.suggestions[0]], "933a5416ee8344d0532c9e34ecf5b267.jpg.webp")
         XCTAssertTrue(d.awards.contains { $0.contains("برنده بهترین بازیگر نقش اول زن") })
         XCTAssertEqual(d.card.posterHash, "eac12b446fe94c8ef5485a2291db460a.jpg.webp")
+    }
+
+    /// The critics score line shares the awards' flag icon; it is metadata, not an award heading.
+    func testCriticsScoreIsNotAnAward() throws {
+        let ref = TitleRef(kind: .series, postId: 5653620, slug: "pluribus")
+        let critics = #"<div class="col-12 d-none d-sm2-block p-1"><i class="fa fa-flag"></i> امتیاز منتقدین : 66 / 100</div>"#
+        let html = fixture("title_series_pluribus.html")
+            .replacingOccurrences(of: "<p class='mb-1 font-weight-bold'><i class='fa fa-flag'></i>",
+                                  with: critics + "<p class='mb-1 font-weight-bold'><i class='fa fa-flag'></i>")
+        XCTAssertTrue(html.contains(critics))
+        let d = try TitleParser.parse(html, ref: ref)
+        XCTAssertEqual(d.awards, ["گلدن گلوب سال ۲۰۲۶: نامزد بهترین سریال", "گلدن گلوب سال ۲۰۲۶: برنده بهترین بازیگر نقش اول زن"])
     }
 
     func testFilmTitle() throws {

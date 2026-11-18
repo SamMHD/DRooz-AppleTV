@@ -10,6 +10,7 @@ struct LoginScreen: View {
     @State private var mobileHint: String?
     @State private var error: String?
     @State private var busy = false
+    @FocusState private var mobileFocused: Bool
 
     var body: some View {
         HStack(spacing: 120) {
@@ -30,6 +31,7 @@ struct LoginScreen: View {
                     TextField(hint.isEmpty ? "شماره موبایل" : hint, text: $mobile)
                         .keyboardType(.numberPad)
                         .environment(\.layoutDirection, .leftToRight)
+                        .focused($mobileFocused)
                 }
                 if let error {
                     Text(error).font(.vazir(26, .medium)).foregroundStyle(Palette.accent)
@@ -69,6 +71,8 @@ struct LoginScreen: View {
                 app.didLogIn()
             case .needsMobile(let hint):
                 mobileHint = hint
+                // Focus stayed on the (now disabled) login button; the new field is the next step.
+                Task { @MainActor in mobileFocused = true }
             case .wrongCredentials:
                 error = "نام کاربری یا رمز عبور اشتباه است"
             case .failed(let message):

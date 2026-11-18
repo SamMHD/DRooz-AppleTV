@@ -31,6 +31,7 @@ final class ListModel {
     @ObservationIgnored private var loadedPage = 0
     @ObservationIgnored private var lastPage = 1
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var generation = 0
     @ObservationIgnored private var seenWatchlist = 0
 
     init(config: ListConfig, app: AppModel) {
@@ -49,8 +50,11 @@ final class ListModel {
         let path = self.path
         if page == 1 { loading = true; error = nil } else { loadingMore = true }
         pageError = false
+        generation += 1
+        let gen = generation
         task = Task {
-            defer { task = nil; loading = false; loadingMore = false }
+            // A load cancelled by a chip switch or reload must not clear the state of the one that replaced it.
+            defer { if gen == generation { task = nil; loading = false; loadingMore = false } }
             do {
                 let result: ListPage
                 if page == 1 && config.categories != nil && chips.isEmpty {
@@ -60,12 +64,12 @@ final class ListModel {
                 } else {
                     result = try await app.site.list(path, page: page)
                 }
-                guard !Task.isCancelled, path == self.path else { return }
+                guard !Task.isCancelled, gen == generation, path == self.path else { return }
                 loadedPage = page
                 lastPage = max(result.lastPage, page)
                 append(result.items)
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, gen == generation else { return }
                 if page == 1 { self.error = error.userMessage } else { pageError = true }
             }
         }

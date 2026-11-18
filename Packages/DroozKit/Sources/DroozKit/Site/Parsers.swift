@@ -40,7 +40,7 @@ public enum CardParser {
             heading = own.isEmpty ? h.txt : own
         }
         let m = titleYear.firstGroups(in: heading)
-        let title = m?[1].nilIfBlank ?? heading.nilIfBlank ?? ref.slug
+        let title = m?[1].nilIfBlank ?? heading.nilIfBlank ?? UiStrings.prettifySlug(ref.slug)
         let year = m.flatMap { Int($0[2]) }
         let poster = el.all("img").lazy.map(imgPath)
             .compactMap { src -> String? in
@@ -223,12 +223,17 @@ public enum TitleParser {
         card.ref = ref
 
         let channel = meta?.one("i.fa-tv")?.parent()?.txt.afterColon().nilIfBlank
+        var seenAwards = Set<String>()
         let awards: [String] = (meta?.all("i.fa-flag") ?? []).flatMap { icon -> [String] in
-            guard let heading = icon.parent(), let box = heading.parent() else { return [] }
+            // The critics score line carries the same flag icon; its neighbours are not award entries.
+            guard let heading = icon.parent(), let box = heading.parent(),
+                  PersianText.criticsScore(heading.txt) == nil else { return [] }
             var title = heading.txt
             while title.hasSuffix(":") || title.hasSuffix(" ") { title.removeLast() }
             return box.all("div.col-12.px-0").map { "\(title): \($0.txt)" }
         }
+        // Entries are nested `div.col-12.px-0`s (column and cell), so each one matches twice.
+        .filter { seenAwards.insert($0).inserted }
         let links: [(TitleRef, String?)] = (doc.all("h2")
             .first(where: { PersianText.normalize($0.txt).contains("آثار پیشنهادی") })?
             .parent()?.parent()?.all("a[href*=/post/]") ?? [])
