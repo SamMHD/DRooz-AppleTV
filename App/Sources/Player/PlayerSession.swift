@@ -143,6 +143,9 @@ final class PlayerSession: NSObject {
         vc.traitOverrides.layoutDirection = .leftToRight
         // Its title view sits on the same row as the buttons (tvOS 27); the overlay draws the title instead.
         vc.transportBarIncludesTitleView = false
+        // tvOS 27 adds generated English captions to the system's own Subtitles button. DRooz draws its own
+        // subtitles (the «زیرنویس» menu), so the system menu gets a language filter that matches nothing.
+        vc.allowedSubtitleOptionLanguages = [""]
         vc.delegate = self
         vc.onDismissed = { [weak self] in self?.finish() }
         let host = UIHostingController(rootView: SubtitleOverlayView(model: overlay))
@@ -786,8 +789,7 @@ final class PlayerSession: NSObject {
                         children: SubtitleStyle.opacities.map { v in
             UIAction(title: UiStrings.percent(v), state: v == st.backgroundOpacity ? .on : .off) { [weak self] _ in self?.setStyle { $0.backgroundOpacity = v } }
         })
-        // Not «captions.bubble»: on tvOS 27 the system's own Subtitles button (generated English captions,
-        // which can't be turned off) uses that icon, and the two buttons looked the same.
+        // Not «captions.bubble»: tvOS 27's own Subtitles button (generated English captions) uses that icon.
         return UIMenu(title: "زیرنویس", image: UIImage(systemName: "character.bubble") ?? UIImage(systemName: "text.bubble"),
                       children: [langs, UIMenu(title: "", options: .displayInline, children: [sync, size, color, bg])])
     }

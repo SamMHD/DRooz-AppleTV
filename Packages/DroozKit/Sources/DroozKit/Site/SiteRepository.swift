@@ -202,6 +202,11 @@ public actor SiteRepository {
         }
     }
 
+    /// «لیست من»: the whole list on one page.
+    public func watchlist() async throws -> ListPage {
+        try await authed { WatchlistParser.parse(try await self.http.get("/user/watchlist/").body) }
+    }
+
     public func search(_ query: String) async throws -> [TitleCard] {
         let q = query.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? query
         return try await authed { SearchParser.parse(try await self.http.get("/search/?s=\(q)").body) }

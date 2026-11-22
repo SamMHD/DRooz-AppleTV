@@ -5,6 +5,7 @@ struct ListConfig {
     var title: String
     var path: String
     var emptyText: String? = nil
+    /// «لیست من»: its page has its own layout (`WatchlistParser`).
     var watchlist = false
     var categories: CategoryKind? = nil
 }
@@ -61,6 +62,8 @@ final class ListModel {
                     let r = try await app.site.listWithCategories(path)
                     result = r.page
                     chips = Self.chips(r.categories, kind: config.categories!, defaultPath: config.path, title: config.title)
+                } else if config.watchlist {
+                    result = try await app.site.watchlist()
                 } else {
                     result = try await app.site.list(path, page: page)
                 }
