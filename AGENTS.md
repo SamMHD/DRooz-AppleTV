@@ -38,7 +38,13 @@ The `.xcodeproj` and `App/Info.plist` are generated and git-ignored; never edit 
 - The player's own title view overlaps its buttons on tvOS 27, so `transportBarIncludesTitleView = false` and `SubtitleOverlay` draws the heading. It follows the transport bar via `playerViewController(_:willTransitionToVisibilityOfTransportBar:with:)`.
 - `transportBarCustomMenuItems` supports one level of nested `UIMenu`.
 - HLS audio renditions report `displayName == "Unknown"`. The site's rendition name (`original`, `original-6CH`, `dubbed-fa`) is in `commonMetadata` under `AVMetadataKey.commonKeyTitle`; the dub and 5.1 rules depend on it.
-- tvOS 27 adds a system **Subtitles** button (generated English captions) that apps can't hide. DRooz's subtitle menu uses the `character.bubble` icon so the two look different.
+- tvOS 27 adds a system **Subtitles** button for generated English captions. `PlayerSession` sets `allowedSubtitleOptionLanguages = [""]` so it has nothing to offer, and DRooz's own subtitle menu uses the `character.bubble` icon so the two can't be confused.
+
+## App and site notes
+
+- tvOS selects a tab as soon as it gets focus, and SwiftUI never reports Select on the tab that is already showing. `TabBarSelectPress` in `DroozApp.swift` puts a press recognizer on the system tab bar, so Select on a tab takes it back to its root (for example from a title page to the search results). It recognizes on press-down; a tap recognizer loses to the tab bar's own handling.
+- «لیست من» (`/user/watchlist/`) uses compact cards (`.ty-compact-list`) instead of `.postMeta`, so it has its own `WatchlistParser`. Only cards with the `watchList` class belong to the list; the name and year are in the poster's `title`.
+- `/json/userWatchlist/<id>/watch/` toggles and always answers 200 with an empty body, even when logged out, so the title page's button state is the only confirmation.
 
 ## Testing on devices
 

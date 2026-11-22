@@ -69,6 +69,24 @@ final class ParserTests: XCTestCase {
         XCTAssertEqual(empty.lastPage, 1)
     }
 
+    func testWatchlist() throws {
+        let list = WatchlistParser.parse(fixture("watchlist.html"))
+        // Films, then series; the favourites-only card and the sidebar link are not part of «لیست من».
+        XCTAssertEqual(list.items.map(\.ref.postId), [5744530, 5738721, 5735053])
+        XCTAssertEqual(list.page, 1)
+        XCTAssertEqual(list.lastPage, 1)
+        let first = list.items[0]
+        XCTAssertEqual(first.ref.kind, .film)
+        XCTAssertEqual(first.title, "Once Upon a Time in the Middle East")
+        XCTAssertEqual(first.year, 2026)
+        XCTAssertEqual(first.posterHash, "f2e1a13c82b663225f6fad126480684c.jpg.webp")
+        XCTAssertEqual(list.items[2].ref.kind, .series)
+        XCTAssertEqual(list.items[2].title, "Pluribus")
+        // The ordinary list parser finds nothing here, which is why My List looked empty.
+        XCTAssertTrue(ListParser.parse(fixture("watchlist.html")).items.isEmpty)
+        XCTAssertTrue(WatchlistParser.parse("<html><body></body></html>").items.isEmpty)
+    }
+
     func testCategoryMenu() {
         let cats = CategoryMenuParser.parse(fixture("list_new_films.html"))
         XCTAssertFalse(cats.isEmpty)

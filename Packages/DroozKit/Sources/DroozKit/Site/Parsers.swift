@@ -28,7 +28,7 @@ private func imgPath(_ img: Element) -> String {
 /// Parses one title "card" (`.postMeta` on lists/home, the header block on title pages).
 /// Metadata lines are recognised by their Font Awesome icon, not by position.
 public enum CardParser {
-    private static let titleYear = Rx(#"^(.*?)\s*\((\d{4})\)\s*$"#)
+    static let titleYear = Rx(#"^(.*?)\s*\((\d{4})\)\s*$"#)
 
     public static func parse(_ el: Element) -> TitleCard? {
         guard let link = el.all("a[href*=/post/]").first(where: { TitleRef.fromPath($0.a("href")) != nil }),
@@ -144,6 +144,27 @@ public enum ListParser {
             .compactMap { Int(PersianText.digits($0.txt).trimmingCharacters(in: .whitespaces)) }
             .max() ?? page
         return ListPage(items: items, page: page, lastPage: max(page, last))
+    }
+}
+
+/// «لیست من» (`/user/watchlist/`) has compact cards instead of `.postMeta`, films first and then series, all on one page.
+/// Each card carries the lists it is on (`watchList`, `favoriteList`, `watchedList`) as classes and the site's script
+/// shows one list at a time; «لیست من» is `watchList`. The name and year are only in the poster's `title`.
+public enum WatchlistParser {
+    public static func parse(_ html: String) -> ListPage { parse(doc: parseDoc(html)) }
+
+    public static func parse(doc: Document) -> ListPage {
+        let items = doc.all(".ty-compact-list.watchList").compactMap { card -> TitleCard? in
+            guard let ref = card.all("a[href*=/post/]").lazy.compactMap({ TitleRef.fromPath($0.a("href")) }).first else {
+                return nil
+            }
+            let img = card.one("img")
+            let label = img?.a("title").trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let m = CardParser.titleYear.firstGroups(in: label)
+            return TitleCard(ref: ref, title: m?[1].nilIfBlank ?? label.nilIfBlank ?? UiStrings.prettifySlug(ref.slug),
+                             year: m.flatMap { Int($0[2]) }, posterHash: img.map(imgPath).flatMap(ImageUrls.hashOf))
+        }
+        return ListPage(items: distinctByRef(items), page: 1, lastPage: 1)
     }
 }
 
